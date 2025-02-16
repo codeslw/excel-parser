@@ -1,0 +1,42 @@
+.td_green {
+    background-color: #90EE90 !important; /* Light green */
+}
+
+.td_green2 {
+    background-color: #98FB98 !important; /* Lighter green */
+}
+
+.td_blue {
+    background-color: #ADD8E6 !important; /* Light blue */
+}
+
+.td_blue2 {
+    background-color: #B0E0E6 !important; /* Lighter blue */
+}
+
+.td_default {
+    background-color: #F5F5F5 !important; /* Lightest gray */
+}
+
+.td_fiolet {
+    background-color: #E6E6FA !important; /* Light violet */
+}
+
+.td_yellow {
+    background-color: #FFFFE0 !important; /* Light yellow */
+}
+
+.td_brown {
+    background-color: #DEB887 !important; /* Light brown */
+}
+
+.td_red {
+    background-color: #FFB6C1 !important; /* Light red */
+}
+
+/* Add hover effects */
+.td_green:hover, .td_green2:hover, .td_blue:hover, 
+.td_blue2:hover, .td_default:hover, .td_fiolet:hover,
+.td_yellow:hover, .td_brown:hover, .td_red:hover {
+    filter: brightness(0.95);
+} 

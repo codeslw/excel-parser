@@ -1,5 +1,6 @@
 import "antd/dist/reset.css";
 import {lazy, Suspense} from "react";
+import './styles/table-colors.css';
 
 const Main = lazy(() => import("./pages/Main"));
 

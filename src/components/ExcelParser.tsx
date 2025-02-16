@@ -5,6 +5,10 @@ import * as XLSX from 'xlsx';
 import {useTranslation} from 'react-i18next';
 import ExcelPreviewModal from './ExcelPreviewModal';
 import { ColumnsType } from 'antd/es/table';
+import { parseExcelRange, processHeaderRow } from '../../utils/excelUtils';
+import TableConfigForm from './TableConfigForm';
+import FileUploader from './FileUploader';
+import ColorPicker from './excel/ColorPicker';
 
 interface ExcelColumn {
     title: string;
@@ -12,6 +16,7 @@ interface ExcelColumn {
     dataIndex?: string;
     key?: string;
     children?: ExcelColumn[];
+    originalTitle?: string;
 }
 
 interface CellRange {
@@ -30,6 +35,29 @@ const ExcelParser: React.FC<ExcelParserProps> = ({ handleData }) => {
     const [sheetNames, setSheetNames] = useState<string[]>([]);
     const [tables, setTables] = useState<{ sheetName: string, columns: ExcelColumn[], data: any[] }[]>([]);
     const [previewVisible, setPreviewVisible] = useState<boolean>(false);
+    const [columnColors, setColumnColors] = useState<Record<string, string>>({});
+
+    const handleColorChange = (columnKey: string, colorClass: string) => {
+        setColumnColors(prev => ({
+            ...prev,
+            [columnKey]: colorClass
+        }));
+
+        setTables(current => 
+            current.map(table => ({
+                ...table,
+                columns: updateColumnsWithColor(table.columns, columnKey, colorClass)
+            }))
+        );
+    };
+
+    const updateColumnsWithColor = (columns: ExcelColumn[], key: string, color: string): ExcelColumn[] => {
+        return columns.map(col => ({
+            ...col,
+            className: col.title === key ? color : col.className,
+            children: col.children ? updateColumnsWithColor(col.children, key, color) : col.children
+        }));
+    };
 
     const parseExcelRange = (_sheet: XLSX.WorkSheet, range: CellRange) => {
         const startMatch = range.startCell.match(/([A-Z]+)(\d+)/);
@@ -92,8 +120,10 @@ const ExcelParser: React.FC<ExcelParserProps> = ({ handleData }) => {
             }
 
             if (cell || merge) {
+                const titleText = `t("${cell?.v?.toString()}")` || '';
                 const column: ExcelColumn = {
-                    title: `t("${cell?.v?.toString()}")` || '',
+                    title: titleText,
+                    originalTitle: titleText,
                     align : "center",
                     ...(merge?.e?.c! > merge?.s?.c! ? {} : {dataIndex: ``}),
                     ...(merge?.e?.c! > merge?.s?.c! ? {} : {key: ``}),
@@ -135,6 +165,28 @@ const ExcelParser: React.FC<ExcelParserProps> = ({ handleData }) => {
         return columns;
     };
 
+    const processColumnsWithColors = (columns: ExcelColumn[]): ExcelColumn[] => {
+        return columns.map(col => {
+            const titleStr = col.title?.toString() || '';
+            const colorClass = columnColors[titleStr];
+            
+            return {
+                ...col,
+                className: colorClass,
+                displayTitle: (
+                    <div className="flex items-center justify-between">
+                        <span>{titleStr}</span>
+                        <ColorPicker 
+                            currentColor={colorClass}
+                            onColorSelect={(color) => handleColorChange(titleStr, color)}
+                        />
+                    </div>
+                ),
+                children: col.children ? processColumnsWithColors(col.children) : undefined
+            };
+        });
+    };
+
     const handleUpload = useCallback(async (file: File) => {
         try {
             const data = await file.arrayBuffer();
@@ -172,12 +224,24 @@ const ExcelParser: React.FC<ExcelParserProps> = ({ handleData }) => {
                 endCell: config.endCell
             });
 
-            const processedColumns = processHeaderRow(sheet, startRow, startCol, endCol);
-            // Uncomment the next line if you wish to parse actual data rows (requires processData)
-            // const processedData = processData(sheet, startRow + 2, endRow, startCol, endCol, processedColumns);
+            const rawColumns = processHeaderRow(sheet, startRow, startCol, endCol);
+            const processedColumns = rawColumns.map(col => ({
+                ...col,
+                title: (
+                    <div className="flex items-center">
+                        {col.title}
+                        <ColorPicker
+                            currentColor={columnColors[col.title?.toString()]}
+                            onColorSelect={(color) => handleColorChange(col.title?.toString(), color)}
+                        />
+                    </div>
+                ),
+                className: columnColors[col.title?.toString()]
+            }));
+
             const processedData: any[] = []; // Placeholder for parsed data
 
-            parsedTables.push({ sheetName: config.sheet, columns: processedColumns, data: processedData });
+            parsedTables.push({ sheetName: config.sheet, columns: processedColumns as any, data: processedData });
         });
 
         setTables(parsedTables);
@@ -192,13 +256,13 @@ const ExcelParser: React.FC<ExcelParserProps> = ({ handleData }) => {
                     {(fields, { add, remove }) => (
                         <>
                             {fields.map(({ key, name, ...restField }) => (
-                                <div key={key} style={{ display: 'flex', marginBottom: 8, alignItems: 'center' }}>
+                                <div key={key} className='flex mb-2 space-x-5 items-center'>
                                     <Form.Item
                                         {...restField}
                                         name={[name, 'sheet']}
                                         rules={[{ required: true, message: 'Select a sheet' }]}
                                     >
-                                        <Select placeholder="Select sheet" style={{ width: 150 }}>
+                                        <Select placeholder="Select sheet" className='w-40'>
                                             {sheetNames.map((sheet, index) => (
                                                 <Select.Option key={sheet} value={sheet}>
                                                     {`${index + 1} - ${sheet}`}
@@ -211,16 +275,18 @@ const ExcelParser: React.FC<ExcelParserProps> = ({ handleData }) => {
                                         name={[name, 'startCell']}
                                         rules={[{ required: true, message: 'Start cell is required' }]}
                                     >
-                                        <Input placeholder="Start Cell (e.g. A3)" style={{ width: 120 }} />
+                                        <Input placeholder="Start Cell (e.g. A3)" className='w-40' />
                                     </Form.Item>
                                     <Form.Item
                                         {...restField}
                                         name={[name, 'endCell']}
                                         rules={[{ required: true, message: 'End cell is required' }]}
                                     >
-                                        <Input placeholder="End Cell (e.g. M5)" style={{ width: 120 }} />
+                                        <Input placeholder="End Cell (e.g. M5)" className='w-40' />
                                     </Form.Item>
-                                    <MinusCircleOutlined onClick={() => remove(name)} />
+                                    <div className='h-full flex items-center justify-center mb-6'>
+                                      <MinusCircleOutlined size={24} onClick={() => remove(name)} />
+                                    </div>
                                 </div>
                             ))}
                             <Form.Item>
@@ -270,7 +336,10 @@ const ExcelParser: React.FC<ExcelParserProps> = ({ handleData }) => {
                 <div key={index}>
                     <h3 className="mt-4">Sheet: {table.sheetName}</h3>
                     <Table
-                        columns={table.columns as ColumnsType<any>}
+                        columns={processColumnsWithColors(table.columns).map(col => ({
+                            ...col,
+                            title: col.displayTitle || col.title
+                        })) as ColumnsType<any>}
                         dataSource={table.data}
                         className="mt-2"
                         scroll={{ x: true }}
