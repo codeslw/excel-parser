@@ -15,8 +15,10 @@ interface ExcelColumn {
     align : string;
     dataIndex?: string;
     key?: string;
+    className?: string;
     children?: ExcelColumn[];
     originalTitle?: string;
+    displayTitle?: React.ReactNode;
 }
 
 interface CellRange {
@@ -49,14 +51,22 @@ const ExcelParser: React.FC<ExcelParserProps> = ({ handleData }) => {
                 columns: updateColumnsWithColor(table.columns, columnKey, colorClass)
             }))
         );
+
+        handleData(tables.map(table => ({
+            ...table,
+            columns: updateColumnsWithColor(table.columns, columnKey, colorClass)
+        })));
     };
 
     const updateColumnsWithColor = (columns: ExcelColumn[], key: string, color: string): ExcelColumn[] => {
-        return columns.map(col => ({
-            ...col,
-            className: col.title === key ? color : col.className,
-            children: col.children ? updateColumnsWithColor(col.children, key, color) : col.children
-        }));
+        return columns.map(col => {
+            const titleStr = typeof col.title === 'string' ? col.title : '';
+            return {
+                ...col,
+                className: titleStr === key ? color : col.className,
+                children: col.children ? updateColumnsWithColor(col.children, key, color) : col.children
+            };
+        });
     };
 
     const parseExcelRange = (_sheet: XLSX.WorkSheet, range: CellRange) => {
@@ -224,29 +234,41 @@ const ExcelParser: React.FC<ExcelParserProps> = ({ handleData }) => {
                 endCell: config.endCell
             });
 
-            const rawColumns = processHeaderRow(sheet, startRow, startCol, endCol);
-            const processedColumns = rawColumns.map(col => ({
-                ...col,
-                title: (
-                    <div className="flex items-center">
-                        {col.title}
-                        <ColorPicker
-                            currentColor={columnColors[col.title?.toString()]}
-                            onColorSelect={(color) => handleColorChange(col.title?.toString(), color)}
-                        />
-                    </div>
-                ),
-                className: columnColors[col.title?.toString()]
-            }));
+            // Get the base columns for generated code
+            const columns = processHeaderRow(sheet, startRow, startCol, endCol);
 
-            const processedData: any[] = []; // Placeholder for parsed data
-
-            parsedTables.push({ sheetName: config.sheet, columns: processedColumns as any, data: processedData });
+            parsedTables.push({ 
+                sheetName: config.sheet, 
+                columns, // Store original columns
+                data: [] 
+            });
         });
 
         setTables(parsedTables);
-        // Pass the parsed tables to the handleData callback if needed.
-        handleData(parsedTables);
+        handleData(parsedTables); // This will have the clean columns for code generation
+    };
+
+    // Separate function to prepare columns for display
+    const prepareDisplayColumns = (columns: ExcelColumn[]): ExcelColumn[] => {
+        return columns.map(col => {
+            const titleStr = col.title?.toString() || '';
+            const colorClass = columnColors[titleStr];
+            
+            return {
+                ...col,
+                className: colorClass,
+                displayTitle: (
+                    <div className="flex items-center justify-between">
+                        <span>{titleStr}</span>
+                        <ColorPicker 
+                            currentColor={colorClass}
+                            onColorSelect={(color) => handleColorChange(titleStr, color)}
+                        />
+                    </div>
+                ),
+                children: col.children ? prepareDisplayColumns(col.children) : undefined
+            };
+        });
     };
 
     return (
@@ -336,7 +358,7 @@ const ExcelParser: React.FC<ExcelParserProps> = ({ handleData }) => {
                 <div key={index}>
                     <h3 className="mt-4">Sheet: {table.sheetName}</h3>
                     <Table
-                        columns={processColumnsWithColors(table.columns).map(col => ({
+                        columns={prepareDisplayColumns(table.columns).map(col => ({
                             ...col,
                             title: col.displayTitle || col.title
                         })) as ColumnsType<any>}
