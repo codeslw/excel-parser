@@ -46,10 +46,12 @@ export const processHeaderRow = (
     startCol: number,
     endCol: number,
     depth: number = 0,
-    processedMerges: Set<string> = new Set()
+    processedMerges: Set<string> = new Set(),
+    parentDataIndex: string = ''
 ): ExcelColumn[] => {
     const columns: ExcelColumn[] = [];
     let currentCol = startCol;
+    let columnCounter = 0;
 
     while (currentCol <= endCol) {
         const cellAddress = XLSX.utils.encode_cell({
@@ -75,16 +77,17 @@ export const processHeaderRow = (
         }
 
         if (cell || merge) {
-            const colorClass = DEFAULT_COLOR_ORDER[(currentCol - startCol) % DEFAULT_COLOR_ORDER.length];
-            
             const titleText = `t("${cell?.v?.toString()}")` || '';
+            // Generate depth-aware dataIndex
+            const dataIndex = parentDataIndex 
+                ? `${parentDataIndex}_child_${columnCounter}`
+                : `col_${columnCounter}`;
+            
             const column: ExcelColumn = {
                 title: titleText,
-                originalTitle: titleText,
                 align: "center",
-                key: cell?.v?.toString() || '',
-                className: colorClass,
-                dataIndex: cell?.v?.toString() || '',
+                dataIndex,
+                key: dataIndex,
                 ...(merge?.e?.c! > merge?.s?.c! ? {} : { render: (value: any) => value })
             };
 
@@ -92,21 +95,18 @@ export const processHeaderRow = (
                 processedMerges.add(mergeKey);
 
                 if (merge.e.c > merge.s.c) {
-                    // Pass parent's color class to children
                     const children = processHeaderRow(
                         sheet,
                         merge.s.r + 1,
                         merge.s.c,
                         merge.e.c,
                         depth + 1,
-                        processedMerges
+                        processedMerges,
+                        dataIndex  // Pass current dataIndex as parent
                     );
 
                     if (children.length > 0) {
-                        column.children = children.map(child => ({
-                            ...child,
-                            className: colorClass // Inherit parent's color
-                        }));
+                        column.children = children;
                     }
                 }
 
@@ -114,6 +114,7 @@ export const processHeaderRow = (
             }
 
             columns.push(column);
+            columnCounter++;
         }
 
         currentCol++;

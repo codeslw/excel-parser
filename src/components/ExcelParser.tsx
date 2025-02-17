@@ -9,6 +9,7 @@ import { parseExcelRange, processHeaderRow } from '../../utils/excelUtils';
 import TableConfigForm from './TableConfigForm';
 import FileUploader from './FileUploader';
 import ColorPicker from './excel/ColorPicker';
+import { ExcelParserProps, ParsedTable, TableConfig, ExcelColumn } from '../types/excel';
 
 interface ExcelColumn {
     title: string;
@@ -26,46 +27,48 @@ interface CellRange {
     endCell: string;
 }
 
-interface ExcelParserProps {
-    handleData: (columns: Record<string, any>[]) => Promise<void>;
-}
-
 const ExcelParser: React.FC<ExcelParserProps> = ({ handleData }) => {
     const {t} = useTranslation();
     const [excelFile, setExcelFile] = useState<File | null>(null);
     const [workbook, setWorkbook] = useState<XLSX.WorkBook | null>(null);
     const [sheetNames, setSheetNames] = useState<string[]>([]);
-    const [tables, setTables] = useState<{ sheetName: string, columns: ExcelColumn[], data: any[] }[]>([]);
+    const [tables, setTables] = useState<ParsedTable[]>([]);
     const [previewVisible, setPreviewVisible] = useState<boolean>(false);
     const [columnColors, setColumnColors] = useState<Record<string, string>>({});
 
-    const handleColorChange = (columnKey: string, colorClass: string) => {
+    const handleColorChange = (dataIndex: string, colorClass: string) => {
         setColumnColors(prev => ({
             ...prev,
-            [columnKey]: colorClass
+            [dataIndex]: colorClass
         }));
 
-        setTables(current => 
-            current.map(table => ({
-                ...table,
-                columns: updateColumnsWithColor(table.columns, columnKey, colorClass)
-            }))
-        );
-
-        handleData(tables.map(table => ({
+        const updatedTables = tables.map(table => ({
             ...table,
-            columns: updateColumnsWithColor(table.columns, columnKey, colorClass)
-        })));
+            columns: updateColumnsWithColor(table.columns, dataIndex, colorClass)
+        }));
+
+        setTables(updatedTables);
+        // Convert the updated columns to JSON string before passing to handleData
+        const result = JSON.stringify(updatedTables[0].columns, null, 2);
+        handleData(result);  // This will trigger code generation in Main.tsx
     };
 
-    const updateColumnsWithColor = (columns: ExcelColumn[], key: string, color: string): ExcelColumn[] => {
+    const updateColumnsWithColor = (columns: ExcelColumn[], dataIndex: string, colorClass: string): ExcelColumn[] => {
         return columns.map(col => {
-            const titleStr = typeof col.title === 'string' ? col.title : '';
-            return {
-                ...col,
-                className: titleStr === key ? color : col.className,
-                children: col.children ? updateColumnsWithColor(col.children, key, color) : col.children
-            };
+            let updatedCol = { ...col };
+
+            // If this is the target column or its dataIndex starts with the target dataIndex
+            // (meaning it's a child of the target), apply the color
+            if (col.dataIndex === dataIndex || col.dataIndex?.startsWith(dataIndex + '_child_')) {
+                updatedCol.className = colorClass;
+            }
+
+            // Recursively update children
+            if (col.children) {
+                updatedCol.children = updateColumnsWithColor(col.children, dataIndex, colorClass);
+            }
+
+            return updatedCol;
         });
     };
 
@@ -131,12 +134,15 @@ const ExcelParser: React.FC<ExcelParserProps> = ({ handleData }) => {
 
             if (cell || merge) {
                 const titleText = `t("${cell?.v?.toString()}")` || '';
+                // Generate unique dataIndex based on column position
+                const dataIndex = `col_${currentCol - startCol}`;
+                
                 const column: ExcelColumn = {
                     title: titleText,
                     originalTitle: titleText,
                     align : "center",
-                    ...(merge?.e?.c! > merge?.s?.c! ? {} : {dataIndex: ``}),
-                    ...(merge?.e?.c! > merge?.s?.c! ? {} : {key: ``}),
+                    dataIndex,
+                    key: dataIndex,
                     ...(merge?.e?.c! > merge?.s?.c! ? {} : {render: (value: any) => value})
                 };
 
@@ -220,7 +226,7 @@ const ExcelParser: React.FC<ExcelParserProps> = ({ handleData }) => {
             return;
         }
 
-        const parsedTables: { sheetName: string, columns: ExcelColumn[], data: any[] }[] = [];
+        const parsedTables: ParsedTable[] = [];
 
         values.tableConfigs.forEach(config => {
             const sheet = workbook.Sheets[config.sheet];
@@ -248,27 +254,21 @@ const ExcelParser: React.FC<ExcelParserProps> = ({ handleData }) => {
         handleData(parsedTables); // This will have the clean columns for code generation
     };
 
-    // Separate function to prepare columns for display
-    const prepareDisplayColumns = (columns: ExcelColumn[]): ExcelColumn[] => {
-        return columns.map(col => {
-            const titleStr = col.title?.toString() || '';
-            const colorClass = columnColors[titleStr];
-            
-            return {
-                ...col,
-                className: colorClass,
-                displayTitle: (
-                    <div className="flex items-center justify-between">
-                        <span>{titleStr}</span>
-                        <ColorPicker 
-                            currentColor={colorClass}
-                            onColorSelect={(color) => handleColorChange(titleStr, color)}
-                        />
-                    </div>
-                ),
-                children: col.children ? prepareDisplayColumns(col.children) : undefined
-            };
-        });
+    // Prepare display columns (for Table component only)
+    const prepareDisplayColumns = (columns: ExcelColumn[]): ColumnsType<any> => {
+        return columns.map(col => ({
+            ...col,
+            title: (
+                <div className="flex items-center justify-between">
+                    <span>{col.title}</span>
+                    <ColorPicker 
+                        currentColor={columnColors[col.dataIndex]}
+                        onColorSelect={(color) => handleColorChange(col.dataIndex!, color)}
+                    />
+                </div>
+            ),
+            children: col.children ? prepareDisplayColumns(col.children) : undefined
+        }));
     };
 
     return (
@@ -358,10 +358,7 @@ const ExcelParser: React.FC<ExcelParserProps> = ({ handleData }) => {
                 <div key={index}>
                     <h3 className="mt-4">Sheet: {table.sheetName}</h3>
                     <Table
-                        columns={prepareDisplayColumns(table.columns).map(col => ({
-                            ...col,
-                            title: col.displayTitle || col.title
-                        })) as ColumnsType<any>}
+                        columns={prepareDisplayColumns(table.columns)}
                         dataSource={table.data}
                         className="mt-2"
                         scroll={{ x: true }}

@@ -22,41 +22,50 @@ const Main = () => {
             function transformColumnsToJS(columns: any) {
                 const transformCol = (col: any) => {
                     const props = [];
-                    // Check if title is defined
+                    // Handle title
                     if (col.title === undefined) {
-                        props.push(`\n\t\ttitle: ""`);
+                        props.push(`title: ""`);
                     } else if (typeof col.title === 'string' && col.title.startsWith('t("') && col.title.endsWith('")')) {
-                        // Output the function call code without extra quotes.
-                        props.push(`\n\t\ttitle: ${col.title}`);
+                        props.push(`title: ${col.title}`);
                     } else {
-                        props.push(`\ttitle: ${JSON.stringify(col.title)}`);
+                        props.push(`title: ${JSON.stringify(col.title)}`);
                     }
 
+                    // Handle align
                     if (col.align !== undefined) {
-                        props.push(`\talign: ${JSON.stringify(col.align)}`);
+                        props.push(`align: ${JSON.stringify(col.align)}`);
                     }
+
+                    // Handle dataIndex
                     if (col.dataIndex !== undefined) {
-                        props.push(`\tdataIndex: ${JSON.stringify(col.dataIndex)}`);
+                        props.push(`dataIndex: ${JSON.stringify(col.dataIndex)}`);
                     }
+
+                    // Handle key
                     if (col.key !== undefined) {
-                        props.push(`\tkey: ${JSON.stringify(col.key)}`);
+                        props.push(`key: ${JSON.stringify(col.key)}`);
                     }
 
-                    // Add a render property if there are no children.
+                    // Handle className
+                    if (col.className !== undefined) {
+                        props.push(`className: ${JSON.stringify(col.className)}`);
+                    }
+
+                    // Add render property if there are no children
                     if (!col.children) {
-                        props.push(`\trender: (value, record, index) => value`);
+                        props.push(`render: (value, record, index) => value`);
                     }
 
-                    // Recursively handle children if they exist.
+                    // Handle children recursively
                     if (col.children && Array.isArray(col.children)) {
                         const childrenCode = transformColumnsToJS(col.children);
-                        props.push(`children: ${childrenCode}\n`);
+                        props.push(`children: ${childrenCode}`);
                     }
 
-                    return `\n\t{ ${props.join(',\n\t')} \n\t}`;
+                    return `{\n\t\t${props.join(',\n\t\t')}\n\t}`;
                 };
 
-                return `[\n${columns.map(transformCol).join(',\n ')}\n]`;
+                return `[\n\t${columns.map(transformCol).join(',\n\t')}\n]`;
             }
 
             // Debug: log the received columns before transformation
